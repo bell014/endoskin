@@ -1,0 +1,220 @@
+:root {
+    --e-global-typography-a9c9415-font-size: 16px;
+    --e-global-typography-a9c9415-line-height: 1.5;
+}
+
+/* Reset Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-size: var(--e-global-typography-a9c9415-font-size);
+    line-height: var(--e-global-typography-a9c9415-line-height);
+}
+
+/* Import Google Font */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+
+/* General Styles */
+body {
+    font-family: 'Poppins', sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f8f9ff;
+    color: #2d3748;
+    line-height: 1.6;
+}
+
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 30px;
+    background-color: #ffffff;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.logo {
+    width: 120px;
+    height: auto;
+    transition: transform 0.3s ease;
+}
+
+.logo:hover {
+    transform: scale(1.05);
+}
+
+.navbar {
+    display: flex;
+    justify-content: center;
+    position: relative;
+    padding: 15px 60px;
+}
+
+.nav-links {
+    display: flex;
+    list-style: none;
+    gap: 30px;
+    margin: 0;
+    padding: 0;
+}
+
+.logo {
+    position: absolute;
+    left: 30px;
+}
+
+.search {
+    position: absolute;
+    right: 30px;
+    top: 15px;
+}
+
+.nav-links li a {
+    text-decoration: none;
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 1.1rem;
+    position: relative;
+    padding: 5px 0;
+    transition: color 0.3s ease;
+}
+
+.nav-links li a:hover {
+    color: #5a67d8;
+}
+
+.nav-links li a::after {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 2px;
+    bottom: 0;
+    left: 0;
+    background-color: #5a67d8;
+    transition: width 0.3s ease;
+}
+
+.nav-links li a:hover::after {
+    width: 100%;
+}
+
+.search {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: #f1f5f9;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+}
+
+.search img {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.search:hover {
+    background: #e2e8f0;
+}
+
+.search img:hover {
+    transform: scale(1.1);
+}
+
+.main-container {
+    text-align: center;
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    margin: 30px 0;
+}
+
+h1 {
+    font-size: 2.8rem;
+    color: #2d3748;
+    margin-bottom: 20px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.upload-container {
+    margin-top: 30px;
+    text-align: center;
+}
+
+.upload-btn, .analyze-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 20px 0;
+    font-weight: 600;
+    font-size: 1.1rem;
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.upload-btn:hover, .analyze-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.analyze-btn {
+    background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+    margin-top: 10px;
+}
+
+#imagePreview {
+    max-width: 300px;
+    margin: 30px auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    display: none;
+}
+
+.results {
+    margin-top: 40px;
+    padding: 25px;
+    background: linear-gradient(to right, #f8f9ff, #eef2ff);
+    border-radius: 8px;
+    display: none;
+    border-left: 4px solid #5a67d8;
+}
+
+.results h2 {
+    font-size: 1.8rem;
+    color: #2d3748;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+#modelResults {
+    font-size: 1.2rem;
+    color: #4a5568;
+    line-height: 1.8;
+}
+
+/* Responsive Styles */
+@media (max-width: 768px) {
+    .main-container {
+        padding: 25px;
+    }
+
+    h1 {
+        font-size: 2.2rem;
+    }
+
+    .nav-links {
+        gap: 15px;
+    }
+}

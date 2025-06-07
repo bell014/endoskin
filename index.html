@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Analysis</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <img src="https://www.endoskin.tn/wp-content/uploads/2021/06/logo-endoskin-final.svg" alt="Logo" class="logo">
+        <ul class="nav-links">
+            <li><a href="#">HOME</a></li>
+            <li><a href="#">VISAGE</a></li>
+            <li><a href="#">A PROPOS</a></li>
+        </ul>
+        <div class="search">
+            <i class="fas fa-search"></i>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <h1>Le secret d'une peau éclatante et épanouie.</h1>
+        <p>Téléchargez une image pour obtenir des résultats d'analyse.</p>
+
+        <!-- Image Upload Section -->
+        <div class="upload-container">
+            <label for="imageUpload" class="upload-btn">Choisir une image</label>
+            <input type="file" id="imageUpload" 
+                   accept="image/*"
+                   style="display: none;">
+            <div id="imagePreviewContainer">
+                <img id="imagePreview" alt="Vignette" style="display: none;">
+            </div>
+            <button id="analyzeBtn" class="analyze-btn" style="display: none;">Analyser l'image</button>
+        </div>
+
+        <!-- Analysis Results Section -->
+        <div id="results" class="results" style="display: none;">
+            <h2>Résultats de l'analyse</h2>
+            <div id="modelResults"></div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>© 2025 Image Analysis | Tous droits réservés.</p>
+    </footer>
+
+    <!-- Script for Image Preview and Analysis -->
+    <script>
+        let currentFile = null;
+        const preview = document.getElementById('imagePreview');
+        const resultsSection = document.getElementById('results');
+        const modelResults = document.getElementById('modelResults');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+
+        document.getElementById('imageUpload').addEventListener('change', function(e) {
+            currentFile = e.target.files[0];
+            if (!currentFile) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                preview.src = event.target.result;
+                preview.style.display = 'block';
+                analyzeBtn.style.display = 'inline-block';
+                resultsSection.style.display = 'none';
+            };
+            reader.readAsDataURL(currentFile);
+        });
+
+        analyzeBtn.addEventListener('click', function() {
+            if (!currentFile) return;
+
+            // Show loading state
+            modelResults.innerHTML = '<p>Analyzing image...</p>';
+            resultsSection.style.display = 'block';
+
+            // Create FormData and send to backend
+            const formData = new FormData();
+            formData.append('image', currentFile);
+
+            fetch('/api/analyze', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    modelResults.innerHTML = `
+                        <h3>Analysis Results</h3>
+                        <pre>${JSON.stringify(data.results, null, 2)}</pre>
+                    `;
+                } else {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                modelResults.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            });
+        });
+    </script>
+</body>
+</html>
