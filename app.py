@@ -24,7 +24,7 @@ def f1_metric(y_true, y_pred):
 classes = ['Acne', 'Eczema', 'Moles', 'Psoriasis', 'Rosacea',
            'Seborrheic Keratoses', 'Sun Damage', 'Vitiligo', 'Warts']
 
-app = Flask(__name__, template_folder='.')
+app = Flask(__name__, template_folder='.', static_folder='static')
 
 # Configure CORS
 CORS(app, resources={
