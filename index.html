@@ -11,6 +11,11 @@
     <!-- Navigation Bar -->
     <nav class="navbar">
         <img src="https://www.endoskin.tn/wp-content/uploads/2021/06/logo-endoskin-final.svg" alt="Logo" class="logo">
+        <button class="hamburger" aria-label="Menu">
+            <span class="hamburger-box">
+                <span class="hamburger-inner"></span>
+            </span>
+        </button>
         <ul class="nav-links">
             <li><a href="#">HOME</a></li>
             <li><a href="#">VISAGE</a></li>
@@ -58,6 +63,23 @@
         const modelResults = document.getElementById('modelResults');
         const analyzeBtn = document.getElementById('analyzeBtn');
 
+        // Hamburger Menu Toggle
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks = document.querySelector('.nav-links');
+        
+        hamburger.addEventListener('click', () => {
+            hamburger.classList.toggle('active');
+            navLinks.classList.toggle('active');
+        });
+
+        // Close menu when clicking outside or on links
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.navbar') && navLinks.classList.contains('active')) {
+                hamburger.classList.remove('active');
+                navLinks.classList.remove('active');
+            }
+        });
+
         document.getElementById('imageUpload').addEventListener('change', function(e) {
             currentFile = e.target.files[0];
             if (!currentFile) return;
@@ -83,16 +105,33 @@
             const formData = new FormData();
             formData.append('image', currentFile);
 
-            fetch('/api/analyze', {
+            fetch('http://localhost:5000/predict', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                headers: {
+                    'Accept': 'application/json'
+                }
             })
-            .then(response => response.json())
+            .then(response => {
+                console.log('Raw response:', response);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Invalid response format');
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log('Response data:', data);
                 if (data.success) {
                     modelResults.innerHTML = `
-                        <h3>Analysis Results</h3>
-                        <pre>${JSON.stringify(data.results, null, 2)}</pre>
+                        <div class="result-card">
+                            <h3>Condition: ${data.prediction.condition}</h3>
+                            <p>Confidence: ${data.prediction.confidence}</p>
+                            <img src="${data.imageUrl}" alt="Analyzed image" class="result-image">
+                        </div>
                     `;
                 } else {
                     throw new Error(data.error || 'Analysis failed');
@@ -100,7 +139,10 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                modelResults.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+                modelResults.innerHTML = `
+                    <p class="error">Error: ${error.message}</p>
+                    <p>Please check the console for more details</p>
+                `;
             });
         });
     </script>

@@ -204,17 +204,173 @@ h1 {
     line-height: 1.8;
 }
 
+/* Hamburger Menu Styles */
+.hamburger {
+    display: none;
+    padding: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    z-index: 100;
+}
+
+.hamburger-box {
+    width: 30px;
+    height: 24px;
+    display: inline-block;
+    position: relative;
+}
+
+.hamburger-inner {
+    width: 100%;
+    height: 2px;
+    background-color: #4a5568;
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: transform 0.2s ease;
+}
+
+.hamburger-inner::before,
+.hamburger-inner::after {
+    content: '';
+    width: 100%;
+    height: 2px;
+    background-color: #4a5568;
+    position: absolute;
+    left: 0;
+    transition: transform 0.2s ease;
+}
+
+.hamburger-inner::before {
+    top: -8px;
+}
+
+.hamburger-inner::after {
+    top: 8px;
+}
+
+/* Active Hamburger State */
+.hamburger.active .hamburger-inner {
+    transform: rotate(45deg);
+}
+
+.hamburger.active .hamburger-inner::before {
+    transform: rotate(90deg) translateX(8px);
+}
+
+.hamburger.active .hamburger-inner::after {
+    transform: rotate(90deg) translateX(-8px);
+}
+
 /* Responsive Styles */
 @media (max-width: 768px) {
-    .main-container {
-        padding: 25px;
+    body {
+        padding: 10px;
+        overflow-x: hidden;
     }
 
-    h1 {
-        font-size: 2.2rem;
+    .navbar {
+        flex-direction: row;
+        padding: 15px;
+        align-items: center;
+        position: relative;
+    }
+
+    .hamburger {
+        display: block;
+        top: 50px; /* Maximum spacing from search button */
+    }
+
+    .navbar {
+        padding-top: 100px; /* Increased to accommodate maximum spacing */
     }
 
     .nav-links {
-        gap: 15px;
+        position: fixed;
+        top: 70px; /* Start below search and hamburger */
+        right: -100%;
+        width: 70%;
+        height: calc(100vh - 70px); /* Adjust height to account for top bar */
+        background: #ffffff;
+        flex-direction: column;
+        gap: 20px;
+        padding: 20px;
+        box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+        transition: right 0.3s ease;
+        z-index: 99;
+    }
+
+    .nav-links.active {
+        right: 0;
+    }
+
+    .nav-links li {
+        width: 100%;
+        text-align: left;
+    }
+
+    .search {
+        position: absolute;
+        left: 15px;
+        top: 15px;
+        margin: 0;
+        width: auto;
+    }
+
+    .hamburger {
+        right: 15px;
+        left: auto;
+    }
+
+    .logo {
+        position: static;
+        margin: 0 auto;
+        order: 1;
+    }
+
+    .navbar {
+        justify-content: center;
+        flex-wrap: wrap;
+        padding-top: 60px;
+    }
+
+    .main-container {
+        padding: 15px;
+        margin: 15px 0;
+    }
+
+    h1 {
+        font-size: 1.8rem;
+        margin-bottom: 15px;
+    }
+
+    .upload-container {
+        margin-top: 20px;
+    }
+
+    .upload-btn, .analyze-btn {
+        width: 100%;
+        padding: 15px;
+        margin: 10px 0;
+        font-size: 1rem;
+    }
+
+    #imagePreview {
+        max-width: 100%;
+        margin: 20px auto;
+    }
+
+    .results {
+        margin-top: 20px;
+        padding: 15px;
+    }
+
+    .results h2 {
+        font-size: 1.4rem;
     }
 }
