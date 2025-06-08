@@ -81,8 +81,12 @@
         });
 
         document.getElementById('imageUpload').addEventListener('change', function(e) {
-            currentFile = e.target.files[0];
-            if (!currentFile) return;
+            const files = e.target.files;
+            if (!files || files.length === 0) {
+                console.error('No file selected');
+                return;
+            }
+            currentFile = files[0];
 
             const reader = new FileReader();
             reader.onload = function(event) {
@@ -103,14 +107,20 @@
 
             // Create FormData and send to backend
             const formData = new FormData();
-            formData.append('image', currentFile);
+            formData.append('file', currentFile);  // Changed from 'image' to 'file' to match backend expectation
 
-            fetch('http://localhost:5000/predict', {
+            console.log('FormData contents:', Array.from(formData.entries()));
+            
+            fetch('http://localhost:5000/predict_image', {
                 method: 'POST',
                 body: formData,
                 headers: {
                     'Accept': 'application/json'
                 }
+            })
+            .catch(error => {
+                console.error('Network error:', error);
+                throw error;
             })
             .then(response => {
                 console.log('Raw response:', response);
@@ -125,16 +135,20 @@
             })
             .then(data => {
                 console.log('Response data:', data);
-                if (data.success) {
+                console.log('Full response data:', data);
+                if (data.success && data.prediction) {
+                    // Verify image URL exists
+                    const imgUrl = data.imageUrl || preview.src;
+                    
                     modelResults.innerHTML = `
                         <div class="result-card">
-                            <h3>Condition: ${data.prediction.condition}</h3>
-                            <p>Confidence: ${data.prediction.confidence}</p>
-                            <img src="${data.imageUrl}" alt="Analyzed image" class="result-image">
+                            <h3>Condition: ${data.prediction.condition || 'Unknown'}</h3>
+                            <p>Confidence: ${data.prediction.confidence || 0}%</p>
+                            <img src="${imgUrl}" alt="Analyzed image" class="result-image">
                         </div>
                     `;
                 } else {
-                    throw new Error(data.error || 'Analysis failed');
+                    throw new Error(data.error || 'Analysis failed - no prediction data');
                 }
             })
             .catch(error => {

@@ -79,7 +79,7 @@ def save_to_mongodb(data, max_retries=3):
 def home():
     return render_template("index.html")
 
-@app.route('/predict', methods=['POST'])
+@app.route('/predict_image', methods=['POST'])
 @cross_origin()
 def predict():
     """Handle image upload and prediction"""

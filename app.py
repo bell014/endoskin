@@ -1,152 +1,293 @@
 import os
 import uuid
-import flask
-import urllib.request # Changed from urllib (general module) to urllib.request (specific module)
+import urllib.request
 from PIL import Image
-from tensorflow.keras.models import load_model
-from flask import Flask , render_template , request , send_file
-from tensorflow.keras.preprocessing.image import load_img , img_to_array
-# from sklearn.metrics import f1_score # You only need this if you're actively using it, not just for loading a custom metric
+import numpy as np
+import io
+from datetime import datetime
+import time
 
-# Removed this function definition as it's typically part of the training script
-# def f1_metric(y_true, y_pred):
-#     return f1_score(y_true, y_pred)
+import tensorflow as tf
+from tensorflow.keras.models import load_model, Model
+from tensorflow.keras.layers import Dense, Flatten, Input
+from tensorflow.keras.preprocessing.image import load_img, img_to_array # Still useful for initial loading if needed
 
-# Define f1_metric as a dummy if it's only needed for loading and not for actual use
-# A better approach for loading models with custom metrics is to define a dummy function
-# that matches the signature but doesn't require sklearn if you don't use it elsewhere.
-# OR, if you use it in the training script, ensure sklearn is installed and accessible.
+from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+
+# Define f1_metric as a dummy for model loading
 def f1_metric(y_true, y_pred):
-    # This is a dummy for loading. If you truly need F1 score,
-    # you'd calculate it here or ensure y_true and y_pred are compatible.
-    # For loading a pre-trained model, a placeholder is often sufficient.
-    return 0.0 # Or use tf.keras.metrics.F1Score if it's a Keras metric
+    return 0.0
 
-classes = ['Acne', 'Eczema', 'Moles', 'Psoriasis', 'Rosacea','Seborrheic Keratoses', 'Sun Damage', 'Vitiligo', 'Warts']
-# Note: Your model seems to output 2048 values, but you have 9 classes.
-# This indicates your model's output layer might be wrong or it's a feature extractor.
-# For now, we'll proceed with 9 classes, but be aware of this discrepancy.
-# If your model truly has 9 classes, `result[0]` should have 9 elements.
-# If it outputs 2048, it's likely a feature extractor, not a direct classifier.
-# Assuming it should be 9 classes for now based on 'classes' list.
+# Define your class labels
+classes = ['Acne', 'Eczema', 'Moles', 'Psoriasis', 'Rosacea',
+           'Seborrheic Keratoses', 'Sun Damage', 'Vitiligo', 'Warts']
 
-app = Flask(__name__)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Load model
-model = load_model(os.path.join(BASE_DIR, 'incepti.h5'), custom_objects={'f1_metric': f1_metric})
+app = Flask(__name__, template_folder='.')
+
+# Configure CORS
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://192.168.100.8:3000", "http://localhost:3000", "http://127.0.0.1:3000"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
+# Configure upload folder for saved images
+UPLOAD_FOLDER = 'uploads'
+STATIC_IMAGES_FOLDER = 'static/images'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(STATIC_IMAGES_FOLDER, exist_ok=True)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['STATIC_IMAGES_FOLDER'] = STATIC_IMAGES_FOLDER
+
+# Define the target input shape for your model (HEIGHT, WIDTH, CHANNELS)
+TARGET_IMAGE_HEIGHT = 75
+TARGET_IMAGE_WIDTH = 100
+TARGET_IMAGE_SHAPE = (TARGET_IMAGE_HEIGHT, TARGET_IMAGE_WIDTH, 3)
+
+# --- MODEL LOADING AND COMBINATION ---
+print("Loading TensorFlow model (feature extractor)...")
+try:
+    # Load the base model (your feature extractor like InceptionV3)
+    base_model = load_model(os.path.join(os.path.dirname(os.path.abspath(__file__)) , 'incepti.h5'),
+                            custom_objects={'f1_metric': f1_metric},
+                            compile=False)
+    print("Base model loaded successfully. Inspecting output shape before modification...")
+    print(f"Original Base model input shape: {base_model.input_shape}")
+    print(f"Original Base model output shape: {base_model.output_shape}")
+
+    # Create an Input layer that matches the DESIRED input shape for your combined model
+    # (None, 75, 100, 3)
+    inputs = Input(shape=TARGET_IMAGE_SHAPE)
+
+    # Note: If your 'incepti.h5' is specifically a pre-trained model like InceptionV3
+    # it likely expects (224, 224, 3) or (299, 299, 3). Resizing to (75, 100) before
+    # feeding it to such a model might lead to poor performance unless 'incepti.h5'
+    # was *specifically trained* on (75, 100) images.
+    # If incepti.h5 is InceptionV3, you might need to insert an appropriate resizing layer
+    # or ensure your base_model itself is flexible or adapted.
+    # For now, we'll connect it directly as requested, but keep this performance note in mind.
+
+    # Connect the inputs to the base_model
+    # This might require careful handling if base_model expects a different input shape
+    # than TARGET_IMAGE_SHAPE. If base_model expects (224,224,3), and you feed (75,100,3),
+    # it WILL cause an error or unexpected behavior.
+    # The safest way is to ensure base_model's input layer can adapt or resize.
+    # For a general base_model, a Lambda layer for resizing might be needed if shapes mismatch:
+    # from tensorflow.keras.layers import Lambda
+    # x = Lambda(lambda image: tf.image.resize(image, (base_model.input_shape[1], base_model.input_shape[2])))(inputs)
+    # x = base_model(x, training=False)
+
+    # Assuming 'incepti.h5' can accept or be adapted to the new input shape 'TARGET_IMAGE_SHAPE'
+    x = base_model(inputs, training=False)
+
+    # Ensure output is flattened if it's not already 2D (batch, features)
+    if len(x.shape) > 2:
+        x = Flatten()(x)
+
+    # Add your custom classification layers
+    x = Dense(units=128, activation='relu')(x)
+    predictions = Dense(units=len(classes), activation='softmax')(x)
+
+    # Create the final combined model with the desired input shape
+    model = Model(inputs=inputs, outputs=predictions)
+
+    print(f"Combined model created with input shape: {model.input_shape}")
+    print(f"Combined model output shape: {model.output_shape}")
+    model.summary()
+except Exception as e:
+    print(f"Error loading or building model: {e}")
+    model = None # Set model to None if loading fails to prevent further errors
 
 
-ALLOWED_EXT = set(['jpg' , 'jpeg' , 'png' , 'jfif'])
+# Allowed file extensions for uploads
+ALLOWED_EXT = set(['jpg', 'jpeg', 'png', 'jfif'])
 def allowed_file(filename):
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT # Added .lower() for case-insensitivity
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
 
+def preprocess_image_for_prediction(image_bytes):
+    """Preprocess image for model prediction (matches the combined model's input)"""
+    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+    # Resize to the TARGET_IMAGE_SHAPE (WIDTH, HEIGHT) for PIL.Image.resize
+    img = img.resize((TARGET_IMAGE_WIDTH, TARGET_IMAGE_HEIGHT))
+    img_array = np.array(img)
+    img_array = img_array / 255.0
+    return np.expand_dims(img_array, axis=0)
 
-def predict(filename, model):
-    img = load_img(filename, target_size=(224, 224))
-    img = img_to_array(img)
-    img = img.reshape(1, 224, 224, 3)
-    img = img.astype('float32') / 255.0
-    
-    # Get features
-    features = model.predict(img)
-    
-    # Simple classification based on feature magnitudes
-    # This is a placeholder - you should train a proper classifier
-    # on these features for your 9 classes
-    top_3_indices = features[0].argsort()[-3:][::-1]
-    
-    class_result = []
-    prob_result = []
-    for idx in top_3_indices:
-        if idx < len(classes):
-            # Simple normalization for demonstration
-            confidence = (features[0][idx] / features[0].sum()) * 100
-            class_result.append(classes[idx])
-            prob_result.append(round(confidence, 2))
-        else:
-            class_result.append(f"Unknown Feature ({idx})")
-            prob_result.append(0.0)
-            
-    return class_result, prob_result
+def predict_condition(img_array):
+    """Run prediction on the preprocessed image array"""
+    if model is None:
+        raise Exception("Model not loaded. Cannot make prediction.")
 
+    predictions = model.predict(img_array)
+    predicted_class_idx = np.argmax(predictions[0])
+    confidence = float(predictions[0][predicted_class_idx]) * 100
+
+    return classes[predicted_class_idx], round(confidence, 2)
+
+# MongoDB setup
+mongo_uri = os.getenv('MONGODB_URI', 'mongodb+srv://neder:r81n5pEFft90n2RV@cluster0.ccquyi0.mongodb.net/endoskin?retryWrites=true&w=majority&appName=Cluster0')
+try:
+    from pymongo import MongoClient # Import MongoClient here to ensure it's loaded only if needed
+    client = MongoClient(mongo_uri, connectTimeoutMS=60000, socketTimeoutMS=120000)
+    # Ping the MongoDB server to check if connection is successful
+    client.admin.command('ping')
+    print("MongoDB connection established successfully.")
+except Exception as e:
+    print(f"Failed to connect to MongoDB: {e}")
+    client = None # Set client to None if connection fails
+
+# Helper function to save analysis result to MongoDB with retries
+def save_to_mongodb(data, max_retries=3):
+    if client is None:
+        print("MongoDB client not available. Skipping save.")
+        return None
+
+    db = client.get_database('endoskin')
+    analysis_collection = db.analysis_results
+    attempts = 0
+    while attempts < max_retries:
+        try:
+            result = analysis_collection.insert_one(data)
+            return str(result.inserted_id)
+        except Exception as e:
+            attempts += 1
+            print(f"Save attempt {attempts} failed: {e}")
+            if attempts >= max_retries:
+                raise
+            time.sleep(2 ** attempts)
 
 @app.route('/')
 def home():
     return render_template("index.html")
 
-# Modified the endpoint to be /predict (as it should be the one receiving image uploads for prediction)
-# This was causing the KeyError because Postman was hitting /success expecting 'file'
-# but your previous /predict endpoint expected 'image'. This new unified structure simplifies.
-@app.route('/predict_image' , methods = ['POST']) # Renamed to avoid confusion with predict() function
-def predict_image_endpoint(): # Renamed the function to avoid conflict with predict() function
-    error = ''
-    target_img = os.path.join(os.getcwd() , 'static/images')
-    os.makedirs(target_img, exist_ok=True) # Ensure the directory exists
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-    if request.method == 'POST':
-        # Handling image via link
-        if 'link' in request.form: # Check if 'link' form field exists
-            link = request.form.get('link')
-            try :
-                resource = urllib.request.urlopen(link)
-                unique_filename = str(uuid.uuid4())
-                filename = unique_filename + ".jpg" # Assuming .jpg, but could use content-type from resource
-                img_path = os.path.join(target_img , filename)
-                with open(img_path , "wb") as output: # Use 'with' for safer file handling
-                    output.write(resource.read())
-                img = filename # This 'img' is just the filename for template
+@app.route('/predict_image', methods=['POST'])
+def predict_image_endpoint():
+    # Handle direct file upload
+    if 'file' in request.files:
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No selected file'}), 400
 
-                class_result , prob_result = predict(img_path , model)
+        if not allowed_file(file.filename):
+            return jsonify({'success': False, 'error': 'Invalid file type. Only JPG, JPEG, PNG, JFIF allowed.'}), 400
 
-                predictions = {
-                     "class1":class_result[0],
-                     "class2":class_result[1],
-                     "class3":class_result[2],
-                     "prob1": prob_result[0],
-                     "prob2": prob_result[1],
-                     "prob3": prob_result[2],
-                }
-                return render_template('success.html' , img = img , predictions = predictions)
+        try:
+            filename = secure_filename(f"{datetime.now().timestamp()}_{file.filename}")
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            print(f"File saved successfully at: {filepath}")
 
-            except Exception as e :
-                print(f"Error processing link: {str(e)}") # More specific error message
-                error = f'Error with image link: {str(e)}' # Pass specific error
+            with open(filepath, 'rb') as f:
+                image_bytes = f.read()
 
-        # Handling image via file upload
-        elif 'file' in request.files: # Check if 'file' form field exists
-            file = request.files['file']
-            if file.filename == '': # If no file was selected
-                error = "No selected file"
-            elif file and allowed_file(file.filename):
-                filename = secure_filename(file.filename) # Use secure_filename for safety
-                img_path = os.path.join(target_img , filename)
-                file.save(img_path)
-                img = filename # This 'img' is just the filename for template
+            processed_img_array = preprocess_image_for_prediction(image_bytes)
 
-                class_result , prob_result = predict(img_path , model)
+            condition, confidence = predict_condition(processed_img_array)
 
-                predictions = {
-                     "class1":class_result[0],
-                     "class2":class_result[1],
-                     "class3":class_result[2],
-                     "prob1": prob_result[0],
-                     "prob2": prob_result[1],
-                     "prob3": prob_result[2],
-                }
-                return render_template('success.html' , img = img , predictions = predictions)
-            else:
-                error = "Please upload images of jpg, jpeg, png, or jfif extension only."
-        else:
-            error = "No image file or link provided in the request." # Neither 'link' nor 'file' found
+            result_data = {
+                'originalFilename': file.filename,
+                'savedPath': filepath,
+                'predictedCondition': condition,
+                'confidence': confidence,
+                'type': 'upload',
+                'status': 'success',
+                'createdAt': datetime.now()
+            }
 
-    # If any error occurred or request was GET
-    if len(error) > 0:
-        return render_template('index.html' , error = error)
+            try:
+                save_to_mongodb(result_data)
+            except Exception as e:
+                print(f"Error saving to MongoDB: {e}")
+                result_data['status'] = 'failed_to_save'
+
+            response_data = {
+                'success': True,
+                'prediction': {
+                    'condition': condition,
+                    'confidence': f"{confidence}%",
+                    'timestamp': datetime.now().isoformat()
+                },
+                'imageUrl': f"/uploads/{filename}"
+            }
+            return jsonify(response_data), 200
+
+        except Exception as e:
+            print(f"Error during file upload prediction: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    # Handle image via URL link
+    elif 'link' in request.form:
+        link = request.form.get('link')
+        if not link:
+            return jsonify({'success': False, 'error': 'No image link provided'}), 400
+
+        try:
+            resource = urllib.request.urlopen(link, timeout=10)
+            image_bytes = resource.read()
+
+            unique_filename = str(uuid.uuid4())
+            content_type = resource.info().get_content_type()
+            ext = 'jpg'
+            if 'image/' in content_type:
+                ext = content_type.split('/')[-1]
+            filename = f"{unique_filename}.{ext}"
+
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(filepath, "wb") as output_file:
+                output_file.write(image_bytes)
+            print(f"Image from URL saved successfully at: {filepath}")
+
+            processed_img_array = preprocess_image_for_prediction(image_bytes)
+
+            condition, confidence = predict_condition(processed_img_array)
+
+            result_data = {
+                'originalLink': link,
+                'savedPath': filepath,
+                'predictedCondition': condition,
+                'confidence': confidence,
+                'type': 'link',
+                'status': 'success',
+                'createdAt': datetime.now()
+            }
+            try:
+                save_to_mongodb(result_data)
+            except Exception as e:
+                print(f"Error saving to MongoDB: {e}")
+                result_data['status'] = 'failed_to_save'
+
+            response_data = {
+                'success': True,
+                'prediction': {
+                    'condition': condition,
+                    'confidence': f"{confidence}%",
+                    'timestamp': datetime.now().isoformat()
+                },
+                'imageUrl': f"/uploads/{filename}"
+            }
+            return jsonify(response_data), 200
+
+        except urllib.error.URLError as e:
+            print(f"URL error: {e}")
+            return jsonify({'success': False, 'error': f"Could not retrieve image from URL: {e.reason}"}), 400
+        except Exception as e:
+            print(f"Error during URL prediction: {e}")
+            return jsonify({'success': False, 'error': f"Failed to process image from link: {str(e)}"}), 500
     else:
-        # This branch should ideally not be reached if previous returns are correct
-        return render_template('index.html', error="An unexpected error occurred.")
+        return jsonify({'success': False, 'error': 'No image file or link provided in the request'}), 400
 
-
-if __name__ == "__main__":
-    app.run(debug = True)
+if __name__ == '__main__':
+    # Ensure directories exist before starting the app
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    os.makedirs(app.config['STATIC_IMAGES_FOLDER'], exist_ok=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
