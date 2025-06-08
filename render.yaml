@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: endoskin
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: MONGODB_URI
+        description: MongoDB connection string
+      - key: PYTHON_VERSION
+        value: 3.9.13
+    healthCheckPath: /
