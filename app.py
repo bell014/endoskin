@@ -1,6 +1,7 @@
 import os
 import uuid
 import urllib.request
+import gc
 from PIL import Image
 import numpy as np
 import io
@@ -170,21 +171,111 @@ def home():
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+# Configuration
+DEFAULT_BATCH_SIZE = 5  # Number of images to process at once
+MAX_BATCH_SIZE = 10     # Maximum allowed batch size
+
+def process_image_batch(image_batch):
+    """Process a batch of images and return predictions"""
+    results = []
+    for image_bytes, filename in image_batch:
+        try:
+            processed_img_array = preprocess_image_for_prediction(image_bytes)
+            condition, confidence = predict_condition(processed_img_array)
+            results.append({
+                'filename': filename,
+                'condition': condition,
+                'confidence': confidence,
+                'image_array': processed_img_array  # Keep reference for cleanup
+            })
+        except Exception as e:
+            results.append({
+                'filename': filename,
+                'error': str(e)
+            })
+    return results
+
+def cleanup_batch_resources(batch_results):
+    """Explicitly clean up resources from batch processing"""
+    for result in batch_results:
+        if 'image_array' in result:
+            del result['image_array']  # Remove reference to numpy array
+    gc.collect()  # Force garbage collection
+
+def process_url_batch(url_batch):
+    """Process a batch of URLs and return predictions"""
+    results = []
+    for link in url_batch:
+        try:
+            resource = urllib.request.urlopen(link, timeout=10)
+            image_bytes = resource.read()
+            
+            unique_filename = str(uuid.uuid4())
+            content_type = resource.info().get_content_type()
+            ext = 'jpg'
+            if 'image/' in content_type:
+                ext = content_type.split('/')[-1]
+            filename = f"{unique_filename}.{ext}"
+            
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(filepath, "wb") as output_file:
+                output_file.write(image_bytes)
+            
+            processed_img_array = preprocess_image_for_prediction(image_bytes)
+            condition, confidence = predict_condition(processed_img_array)
+            
+            results.append({
+                'link': link,
+                'filename': filename,
+                'condition': condition,
+                'confidence': confidence,
+                'image_array': processed_img_array
+            })
+        except Exception as e:
+            results.append({
+                'link': link,
+                'error': str(e)
+            })
+    return results
+
 @app.route('/predict_image', methods=['POST'])
 def predict_image_endpoint():
-    # Handle direct file upload
+    batch_size = min(int(request.form.get('batch_size', DEFAULT_BATCH_SIZE)), MAX_BATCH_SIZE)
+    
+    # Handle direct file uploads (single or multiple)
     if 'file' in request.files:
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No selected file'}), 400
+        files = request.files.getlist('file')
+        if not files or all(f.filename == '' for f in files):
+            return jsonify({'success': False, 'error': 'No selected files'}), 400
 
-        if not allowed_file(file.filename):
-            return jsonify({'success': False, 'error': 'Invalid file type. Only JPG, JPEG, PNG, JFIF allowed.'}), 400
+        # Validate all files first
+        for file in files:
+            if not allowed_file(file.filename):
+                return jsonify({'success': False, 'error': f'Invalid file type: {file.filename}. Only JPG, JPEG, PNG, JFIF allowed.'}), 400
 
         try:
-            filename = secure_filename(f"{datetime.now().timestamp()}_{file.filename}")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+            # Process in batches
+            all_results = []
+            current_batch = []
+            
+            for file in files:
+                filename = secure_filename(f"{datetime.now().timestamp()}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                image_bytes = file.read()
+                current_batch.append((image_bytes, filename))
+                
+                if len(current_batch) >= batch_size:
+                    batch_results = process_image_batch(current_batch)
+                    all_results.extend(batch_results)
+                    cleanup_batch_resources(batch_results)
+                    current_batch = []
+            
+            # Process remaining items in last batch
+            if current_batch:
+                batch_results = process_image_batch(current_batch)
+                all_results.extend(batch_results)
+                cleanup_batch_resources(batch_results)
             print(f"File saved successfully at: {filepath}")
 
             with open(filepath, 'rb') as f:
@@ -225,55 +316,70 @@ def predict_image_endpoint():
             print(f"Error during file upload prediction: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
-    # Handle image via URL link
+    # Handle image via URL link (single or multiple)
     elif 'link' in request.form:
-        link = request.form.get('link')
-        if not link:
-            return jsonify({'success': False, 'error': 'No image link provided'}), 400
+        links = request.form.getlist('link')
+        if not links or all(not link for link in links):
+            return jsonify({'success': False, 'error': 'No image links provided'}), 400
 
         try:
-            resource = urllib.request.urlopen(link, timeout=10)
-            image_bytes = resource.read()
+            # Process in batches
+            all_results = []
+            current_batch = []
+            
+            for link in links:
+                current_batch.append(link)
+                
+                if len(current_batch) >= batch_size:
+                    batch_results = process_url_batch(current_batch)
+                    all_results.extend(batch_results)
+                    cleanup_batch_resources(batch_results)
+                    current_batch = []
+            
+            # Process remaining items in last batch
+            if current_batch:
+                batch_results = process_url_batch(current_batch)
+                all_results.extend(batch_results)
+                cleanup_batch_resources(batch_results)
 
-            unique_filename = str(uuid.uuid4())
-            content_type = resource.info().get_content_type()
-            ext = 'jpg'
-            if 'image/' in content_type:
-                ext = content_type.split('/')[-1]
-            filename = f"{unique_filename}.{ext}"
+            # Prepare response
+            successful_results = [r for r in all_results if 'error' not in r]
+            failed_results = [r for r in all_results if 'error' in r]
+            
+            # Save successful results to MongoDB
+            for result in successful_results:
+                result_data = {
+                    'originalLink': result['link'],
+                    'savedPath': os.path.join(app.config['UPLOAD_FOLDER'], result['filename']),
+                    'predictedCondition': result['condition'],
+                    'confidence': result['confidence'],
+                    'type': 'link',
+                    'status': 'success',
+                    'createdAt': datetime.now()
+                }
+                try:
+                    save_to_mongodb(result_data)
+                except Exception as e:
+                    print(f"Error saving to MongoDB: {e}")
+                    result['status'] = 'failed_to_save'
 
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            with open(filepath, "wb") as output_file:
-                output_file.write(image_bytes)
-            print(f"Image from URL saved successfully at: {filepath}")
-
-            processed_img_array = preprocess_image_for_prediction(image_bytes)
-
-            condition, confidence = predict_condition(processed_img_array)
-
-            result_data = {
-                'originalLink': link,
-                'savedPath': filepath,
-                'predictedCondition': condition,
-                'confidence': confidence,
-                'type': 'link',
-                'status': 'success',
-                'createdAt': datetime.now()
-            }
-            try:
-                save_to_mongodb(result_data)
-            except Exception as e:
-                print(f"Error saving to MongoDB: {e}")
-                result_data['status'] = 'failed_to_save'
-
+            # Format response
             response_data = {
                 'success': True,
-                'prediction': {
-                    'condition': condition,
-                    'confidence': f"{confidence}%",
-                    'timestamp': datetime.now().isoformat()
-                },
-                'imageUrl': f"/uploads/{filename}"
+                'processed_count': len(all_results),
+                'successful': len(successful_results),
+                'failed': len(failed_results),
+                'results': [{
+                    'link': r['link'],
+                    'success': 'error' not in r,
+                    'prediction': {
+                        'condition': r.get('condition'),
+                        'confidence': f"{r.get('confidence', 0)}%" if 'condition' in r else None,
+                        'timestamp': datetime.now().isoformat()
+                    },
+                    'imageUrl': f"/uploads/{r.get('filename')}" if 'filename' in r else None,
+                    'error': r.get('error')
+                } for r in all_results]
             }
             return jsonify(response_data), 200
 
