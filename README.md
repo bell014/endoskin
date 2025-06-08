@@ -12,7 +12,7 @@
    - `MONGODB_URI`: Your MongoDB connection string
 4. **Set build settings**:
    - Build Command: `pip install -r requirements.txt`
-   - Start Command: `python app.py`
+   - Start Command: `gunicorn --workers 4 --timeout 120 --bind 0.0.0.0:$PORT app:app`
 5. **Deploy**
 
 ## Environment Variables
@@ -21,6 +21,13 @@
 |----------|----------|-------------|
 | MONGODB_URI | Yes | MongoDB connection string |
 | PYTHON_VERSION | No | Python version (default: 3.9.13) |
+
+## Production Configuration
+
+The application uses Gunicorn as a production WSGI server with:
+- 4 worker processes
+- 120-second timeout
+- Automatic port binding
 
 ## Local Development
 
@@ -42,5 +49,5 @@
 
 4. Run the application:
    ```bash
-   python app.py
+   gunicorn --workers 2 --bind 0.0.0.0:5000 app:app
    ```
