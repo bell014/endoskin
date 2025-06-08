@@ -52,8 +52,8 @@ TARGET_IMAGE_SHAPE = (TARGET_IMAGE_HEIGHT, TARGET_IMAGE_WIDTH, 3)
 # --- MODEL LOADING AND COMBINATION ---
 print("Loading TensorFlow model (feature extractor)...")
 try:
-    # Load the base model (your feature extractor like InceptionV3)
-    base_model = load_model(os.path.join(os.path.dirname(os.path.abspath(__file__)) , 'incepti.h5'),
+    # Load the base model (VGG16)
+    base_model = load_model(os.path.join(os.path.dirname(os.path.abspath(__file__)) , 'VGG16.h5'),
                             custom_objects={'f1_metric': f1_metric},
                             compile=False)
     print("Base model loaded successfully. Inspecting output shape before modification...")
@@ -64,12 +64,11 @@ try:
     # (None, 75, 100, 3)
     inputs = Input(shape=TARGET_IMAGE_SHAPE)
 
-    # Note: If your 'incepti.h5' is specifically a pre-trained model like InceptionV3
-    # it likely expects (224, 224, 3) or (299, 299, 3). Resizing to (75, 100) before
-    # feeding it to such a model might lead to poor performance unless 'incepti.h5'
-    # was *specifically trained* on (75, 100) images.
-    # If incepti.h5 is InceptionV3, you might need to insert an appropriate resizing layer
-    # or ensure your base_model itself is flexible or adapted.
+    # Note: VGG16 typically expects (224, 224, 3) input. Resizing to (75, 100) before
+    # feeding it to the model might lead to poor performance unless the model
+    # was specifically trained on (75, 100) images.
+    # You might need to insert an appropriate resizing layer
+    # or ensure the model itself is flexible or adapted.
     # For now, we'll connect it directly as requested, but keep this performance note in mind.
 
     # Connect the inputs to the base_model
@@ -82,7 +81,7 @@ try:
     # x = Lambda(lambda image: tf.image.resize(image, (base_model.input_shape[1], base_model.input_shape[2])))(inputs)
     # x = base_model(x, training=False)
 
-    # Assuming 'incepti.h5' can accept or be adapted to the new input shape 'TARGET_IMAGE_SHAPE'
+    # Assuming 'VGG16.h5' can accept or be adapted to the new input shape 'TARGET_IMAGE_SHAPE'
     x = base_model(inputs, training=False)
 
     # Ensure output is flattened if it's not already 2D (batch, features)
